@@ -1,0 +1,874 @@
+---
+title: "Exercises"
+author: "Jonn Angelo Vergara, Branda Huang, Seun Ibitoye, Mary Caroline Kreps"
+date: "8/15/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+## Visual Storytelling: Green Buildings
+
+```{r, echo=F,message=FALSE, warning=FALSE}
+library(readr)
+data = read_csv('greenbuildings.csv')
+data = data.frame(data)
+
+#data cleaning
+data$cluster = as.factor(data$cluster)
+data$renovated = as.factor(data$renovated)
+data$class_a = as.factor(data$class_a)
+data$class_b = as.factor(data$class_b)
+data$LEED = as.factor(data$LEED)
+data$Energystar = as.factor(data$Energystar)
+data$green_rating = as.factor(data$green_rating)
+data$net = as.factor(data$net)
+data$amenities = as.factor(data$amenities)
+data = data[complete.cases(data),]
+data = subset(data,select = -c(LEED,Energystar,cd_total_07,hd_total07))  #remove columns because they are included in another variable
+
+#put all classes into one variable
+for (i in 1:nrow(data)){
+  if(data[i,'class_a']==1){
+    data[i,'class'] = 3
+    }else if(data[i,'class_b']==1){
+    data[i,'class'] = 2
+    }else{
+    data[i,'class'] = 1
+  }
+}
+data['class']=as.factor(data$class)
+data = subset(data,select = -c(class_a,class_b))  #remove class_a and class_b columns as we already consolidated them into a new 'class' column
+
+#create total_rent column, #take into account of the size and leasing rate of the building
+data['total_rent'] = data$Rent * data$leasing_rate*0.01 *data$size
+
+#separate green buildings 
+green = data[data['green_rating']==1,]
+normal = data[data['green_rating']!=1,]
+
+cat('mean rent for green buildings = ', mean(green$Rent))
+
+cat('mean rent for non-green buildings = ', mean(normal$Rent))
+
+cat('difference between mean rent of green buildings and non-green builings =', mean(green$Rent)-mean(normal$Rent))
+
+cat('mean total rent for green buildings = ', mean(green$total_rent))
+
+cat('mean total rent for non-green buildings = ', mean(normal$total_rent))
+
+cat('difference between mean total rent of green buildings and non-green builings =', mean(green$total_rent)-mean(normal$total_rent))
+
+```
+
+
+```{r, echo=F,message=FALSE, warning=FALSE}
+boxplot(normal$Rent, green$Rent, 
+        ylab = 'rent', 
+        names=c('non-green buildings', 'green buildings'))
+```
+```
+Green building's Rent is higher than normal buildings in average and in total.
+```
+Next, we proceed to verify if green rating is what causes the increase in rent. First, we fit a linear model using most variables to identify significant predictors for green and normal buildings.
+
+```{r, echo=F,message=FALSE, warning=FALSE}
+summary(lm(Rent ~ size + empl_gr + leasing_rate + stories + age + renovated + net + 
+amenities + total_dd_07 + Precipitation + Gas_Costs + Electricity_Costs + class, data = green))
+``` 
+```
+empl_gr, leasing_rate, age,total_dd, precipitation, Gas_costs, Electricity_cost are significant predictors for green building rents. 
+```
+To visualize the individual effects of these significant predictors on Rent of green buildings and their correlations, we created a correlation plot, scatter plots, and box plots below:
+
+```{r,echo=F,message=FALSE, warning=FALSE, out.width="33%"}
+cormat <- round(cor(subset(normal,select = -c(cluster,renovated,green_rating,net,amenities,class, CS_PropertyID,cluster_rent,total_rent))),2)
+
+library(reshape2)
+library(tidyverse)
+melted_cormat <- melt(cormat)
+ggplot(data = melted_cormat, aes(x=Var1, y=Var2, fill=value)) + geom_tile()+ theme(axis.text.x = element_text(angle = 45))
+```
+```{r,echo=F, message=FALSE, warning=FALSE,out.width="33%"}
+library(gridExtra)
+# rent ~ empl_gr
+cor1 <- ggplot(green[which(green$empl_gr<10&green$empl_gr>-5),], aes(empl_gr,Rent))+geom_point(alpha = 0.3)+geom_smooth(method = 'lm')
+# rent ~ leasing_rate
+cor2 <- ggplot(green, aes(leasing_rate,Rent))+geom_point(alpha = 0.3)+geom_smooth(method = 'lm')
+# rent ~ age
+cor3 <- ggplot(green, aes(age,Rent))+geom_point(alpha = 0.3)+geom_smooth(method = 'lm')
+# rent ~ total_dd_07
+cor4 <- ggplot(green, aes(total_dd_07,Rent))+geom_point(alpha = 0.3)+geom_smooth(method = 'lm')
+# rent ~ precipitation
+cor5 <- ggplot(green, aes(Precipitation,Rent))+geom_point(alpha = 0.3)+geom_smooth(method = 'lm')
+# rent ~ gas_cost
+cor6 <- ggplot(green[which(green$Gas_Costs<0.02),],aes(Gas_Costs,Rent))+geom_point(alpha = 0.3)+geom_smooth(method = 'lm')
+# rent ~ electricity_cost
+cor7 <- ggplot(green,aes(Electricity_Costs,Rent))+geom_point(alpha = 0.3)+geom_smooth(method = 'lm')
+grid.arrange(cor1,cor2,cor3,cor4,cor5,cor6,cor7, nrow=3, ncol=3)
+```
+```{r,echo=F, message=FALSE, warning=FALSE, out.width="33%"}
+# rent ~ class
+ggplot(green[which(green$Rent<75),],aes(class,Rent))+geom_boxplot()
+```
+
+
+By neglecting the outliers, we discovered most of these variables were significant to the increase of green building's rent. Then, we compared some of the variables of green buildings to those of normal buildings:
+
+Let's start with age comparison: 
+```{r,echo=F,message=FALSE, warning=FALSE, out.width="33%"}
+summary(green$age)-summary(normal$age)
+boxplot(green$age,normal$age, ylab = 'age', names = c('Green buildings', 'Non-green buildings')) 
+```
+
+
+We discovered that green builidings in general were newer, which leads to higher rent.
+
+```{r,echo=F,message=FALSE, warning=FALSE}
+p_green <- ggplot(data=green, aes(x=class, fill=class)) + geom_bar(stat='count') + 
+                    ggtitle('Green buildings')+ scale_fill_manual(values=c("#999999", "#E69F00", "#56B4E9"))
+p_normal <- ggplot(data=normal, aes(x=class, fill=class)) + geom_bar(stat='count')+
+  ggtitle('Non-green buildings')+ scale_fill_manual(values=c("#999999", "#E69F00", "#56B4E9"))
+grid.arrange(p_green, p_normal, ncol=2)
+```
+```{r}
+summary(green$class)-summary(normal$class)
+
+round(table(green$class)/sum(table(green$class)),2)
+round(table(normal$class)/sum(table(normal$class)),2)
+```
+Most of the green buildings are in class A(= class score: 3 in our definition). This fact leads us to believe that green buildings are generally with higher quality compared to non-green buildings.
+
+In conclusion, age and class could be the reason why green buildings were higher in rent instead of being rated as green buildings. As a result, we will recommend the developer to make build the new 15-story mixed-use building based on class A requirements.
+
+
+## Visual Storytelling: ABIA
+```{r,echo=F,message=FALSE, warning=FALSE,results='hide'}
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(wesanderson)  #color palettes
+library(gridExtra)  #arrange ggplot
+airport = read.csv('abia.csv')
+```
+
+We first create a new 'Date' column by combining 'Year', 'Month', and 'Day of Month'. We also converted the time-related columns(DepTime, CRSDepTime, ArrTime, CRSArrTime) into time formats(HH:MM) for convenient analysis. 
+
+```{r,echo=F,message=FALSE, warning=FALSE,results='hide'}
+# Create a 'Date' column by combining 'Year', 'Month' and 'Day of Month'
+airport['Date'] = paste0(airport$Year, "-", airport$Month, "-", airport$DayofMonth)
+# Convert 'Date' into Date-time format
+airport$Date = as.POSIXct(airport$Date)  
+# Drop missing values
+airport = airport[complete.cases(airport[,1:22]),]
+```
+
+Let's start from seeing the flight frequency by different scales of time:
+
+```{r,echo=F,message=FALSE, warning=FALSE} 
+# Plot flight frequency with Month
+ggplot(data = airport %>% count(Month), aes(Month,n))+
+  geom_line() +scale_x_continuous(breaks=c(1,2,3,4,5,6,7,8,9,10,11,12))+ ggtitle("Flight frequency by Month")
+```
+
+```{r,echo=F,message=FALSE, warning=FALSE}
+p1 <- ggplot(data=airport, aes(x=DayofMonth)) + geom_line(stat='count') + ggtitle("Flight frequency by Day of Month in 12 months")
+p1 + facet_wrap(~Month)
+```
+```{r,echo=F,message=FALSE, warning=FALSE}
+ggplot(data = airport %>% count(DayOfWeek),aes(DayOfWeek,n))+ geom_line()+ ggtitle("Yearly flight frequency by Day of Week")
+```
+We can see that Winter generally had much fewer flights than Summer. This is understandable as people usually have vacations in the Summer. Moreover, the pattern of flight frequency by day of month looked similar in each month. On average, there were 4 to 5 drops in each month. We could guess this was because there was usually fewer flights in a specific day of week. The third plot actually made us realize that generally there was fewer flights on Saturday.
+
+```{r,echo=F,message=FALSE, warning=FALSE}
+#split data into two
+to_austin = airport[airport['Dest']=="AUS",]
+from_austin = airport[airport['Dest']!="AUS",]
+toAustinDelay = to_austin %>% group_by(UniqueCarrier) %>% summarise(mean=mean(ArrDelay,na.rm = T),n=n())
+fromAustinDelay = from_austin %>% group_by(UniqueCarrier) %>% summarise(mean=mean(DepDelay,na.rm = T),n=n())
+```
+
+```{r,echo=F,message=FALSE, warning=FALSE}
+ggplot(data=airport, aes(x=fct_infreq(UniqueCarrier), fill=UniqueCarrier))+ geom_bar()+ ggtitle("Num of flights at ABIA airport by Carrier")
+```
+
+We can see that ABIA Airport were mainly dominated by Southwest Airlines(WN), while American Airlines(AA) and Continental Airlines(CO) being the Top 2 and Top 3 airlines.
+Let's try to dig more information of the Top 3 airlines:
+
+```{r,echo=F,message=FALSE, warning=FALSE}
+ad_carrier <- ggplot(toAustinDelay, aes(x=UniqueCarrier, y=mean, group = 1))+ geom_line()+ 
+  ggtitle("Arrival delay to Austin by Carrier")+ labs(y='mean arrival delay(min)')
+dd_carrier <- ggplot(fromAustinDelay, aes(x=UniqueCarrier, y=mean, group = 1))+ geom_line()+ 
+  ggtitle("Departure delay from Austin by Carrier")+ labs(y='mean departure delay(min)')
+grid.arrange(ad_carrier, dd_carrier, ncol=2)
+```
+We can see that the the performance of average delay rate of the Top 3 Airlines was between 5 to 15 minutes among all airlines at ABIA airport. Southwest Airlines actually did quite well on on-time arrivals. With more than 15,000 flights arriving at Austin, Southwest Airlines only had an average of a 5-min delay.
+
+```{r, echo = FALSE}
+library(ggExtra)
+select_delays <- airport[airport$ArrDelay <= 500 & airport$ArrDelay > 30 & airport$DepDelay <= 500 & airport$DepDelay > 30, ]
+time_delays = ggplot(select_delays, aes(x = ArrDelay, y = DepDelay)) + geom_point() +geom_smooth(method = lm, se = F) + ggtitle("Relationship between ArrDelay and DepDelay")
+
+ggMarginal(time_delays, type = 'boxplot', fill = 'transparent', size = 10)
+
+```
+From this graph, we can see that there is a relationship between Arrival and Departure Delays. Masking the delays to avoid heavy outliers and only including delays of more than 30 minutes, there is a positive increase with Departure Delays the more Arrival Delays there are. Though most delays happen between 50-100 minutes, it is important to note corration between delays when looking further into the Top 3 most common airlines at ABIA.
+```{r,echo=F,message=FALSE, warning=FALSE}
+# Select only those flights by the Top 3 airlines
+top3 = airport[which(airport$UniqueCarrier %in% c('WN', 'AA', 'CO')),]
+top3_to_austin = top3[top3['Dest']=="AUS",]
+top3_from_austin = top3[top3['Dest']!="AUS",]
+```
+
+```{r,echo=F,message=FALSE, warning=FALSE}
+# Arrival Delay of the Top 3 airlines by Month
+p5 <- ggplot(data=top3_to_austin, aes(x=Month, y=ArrDelay))+ stat_summary(fun=mean, geom='bar')+ scale_x_continuous(breaks=c(1,2,3,4,5,6,7,8,9,10,11,12))
+p5 + facet_wrap(~UniqueCarrier)+ ggtitle("Arrival Delay of the Top 3 airlines by month")+ aes(fill=UniqueCarrier)+
+  scale_fill_brewer(palette="Dark2")
+```
+```{r,echo=F,message=FALSE, warning=FALSE}
+# Departure Delay of the Top 3 airlines by Month
+p5 <- ggplot(data=top3_from_austin, aes(x=Month, y=DepDelay))+ stat_summary(fun=mean, geom='bar')+ scale_x_continuous(breaks=c(1,2,3,4,5,6,7,8,9,10,11,12))
+p5 + facet_wrap(~UniqueCarrier)+ ggtitle("Departure Delay of the Top 3 airlines by month")+ aes(fill=UniqueCarrier)+
+  scale_fill_brewer(palette="Dark2")
+```
+By looking into monthly arrival and departure delay of the Top 3 airline, we came to realize that the season from September to November generally had low delay rates while March, June and December had high delay rates. Moreover, the most noticeable difference you could see is that the arrival delays of American Airlines tend to be lower than its' arrival delays on a month per month basis. On the other hand, you could see the opposite effect for Southwest Airlines, where despite having a lower arrival rate, the airlines had higher rates for departures.
+
+
+
+## Portfolio Modeling
+
+### Portfolio 1
+This portfolio consists of four different ETF's: iShares Core S&P 500 ETF (IVV), iShares Global Clean Energy ETF(ICLN), iShares Biotechnology ETF (IBB) and Vanguard 500 Index Fund ETF (VOO). The IVV ETF is composed of large capitalization US equities; IBB tracks investments in an index composed of US listed equities in the biotechnology sector; VOO invests in stocks in the S&P 500 index, representing 500 of the largest US companies and ICLN tracks investments of an index composed of global equities in the clean energy sector. Each ETF is equally represented in this portfolio with a 25% share. This portfolio would be considered slightly diverse as it includes ETF's from two different unrelated sectors and then two other ETF's tracking the top companies in the US. 
+
+```{r, echo= FALSE, include = FALSE, warning=FALSE}
+library(mosaic)
+library(quantmod)
+library(foreach)
+
+#Pull in the ETF's from online 
+mystocks = c("IVV",'IBB','VOO','ICLN')
+myprices = getSymbols(mystocks, from = '2016-08-06')
+("getSymbols.warning4.0"=FALSE)
+```
+
+```{r, echo= FALSE, warning=FALSE}
+for(ticker in mystocks) {
+  expr = paste0(ticker, "a = adjustOHLC(", ticker, ")")
+  eval(parse(text=expr))
+}
+
+
+# Combine all the returns in a matrix
+all_returns = cbind(	ClCl(IVVa),
+                     ClCl(IBBa),
+                     ClCl(VOOa),
+                     ClCl(ICLNa))
+#head(all_returns)
+all_returns = as.matrix(na.omit(all_returns))
+
+pairs(all_returns)
+```
+Here we can see the correlation matrix that compares each ETF's adjusted closing prices to another ETF's based on the past five years. It's important to note that each ETF for this portfolio is generally highly correlated especially IVV and VOO. The most uncorrelated ETFs would be ICLN and VOO or ICLN and IVV as their shapes tend to be more circular.
+
+```{r, echo= FALSE, include = FALSE, warning = FALSE}
+# Now simulate many different possible futures
+# just repeating the above block thousands of times
+set.seed(5)
+initial_wealth = 100000
+sim1 = foreach(i=1:5000, .combine='rbind') %do% {
+  total_wealth = initial_wealth
+  weights = c(0.25, 0.25, 0.25, 0.25)
+  holdings = weights * total_wealth
+  n_days = 20
+  wealthtracker = rep(0, n_days)
+  for(today in 1:n_days) {
+    return.today = resample(all_returns, 1, orig.ids=FALSE) #taking random sample with replacement
+    holdings = holdings + holdings*return.today
+    total_wealth = sum(holdings)
+    wealthtracker[today] = total_wealth
+  }
+  wealthtracker
+}
+```
+
+
+```{r, echo= FALSE}
+#Plot the joint graph for the 5000 simulations to see the range 
+trans_sim1 = rbind(rep(100000, 5000),t(sim1))
+matplot(trans_sim1, type='l', col='grey', lty= 1, main= ' Portfolio 1 Simulation Graph', xlab= 'Days', ylab= 'Wealth')
+```
+
+We simulate the 4-week trading days 5,000 times via bootstrapping to show all the potential wealth paths my portfolio could take. We also resample based on the assumption that we are reallocating our wealth on a per-day basis. The most interesting about this simulation is that one of the wealth paths seem to take off giving us more than a 100% return.
+
+```{r, echo= FALSE}
+hist(sim1[,n_days]- initial_wealth, breaks=30, xlab = 'Gains/Losses in $', main = paste('Distribution of Wealth Gains/Losses'))
+```
+
+```{r, echo= FALSE, include = FALSE}
+#Compute the mean wealth at the end of the 4 weeks as well as
+#the average gains over the 4 weeks 
+mean(sim1[,n_days])
+mean(sim1[,n_days] - initial_wealth)
+range(sim1 - initial_wealth)
+quantile(sim1[,n_days]- initial_wealth, prob=0.05)
+
+```
+From 5,000 possible wealth paths, we can see that the average wealth of portfolio 1 is 102,620.20 USD, an average gain of 2,620.20 USD. The range of my gains range from -21,676.87 USD to 180,160.33 USD. Moreover, under normal conditions there is a 5% chance this portfolio will loose 7,611.36 USD.
+
+### Portfolio 2
+This portfolio contains all agricultural commodity ETFs by the common issuer, Teucrium. Teucrium Corn Fund (CORN), Teucrium Wheat Fund (WEAT), Teucrium Soybean Fund (SOYB), and Teucrium Sugar Fund (CANE) all invest in their respective commodities in the agriculutral sector. The weight by percentage for each are divided 40, 30, 20, and 10 by the order with which they are listed with CORN taking 40%, WEAT taking 30%, and so on. Since these are all the same sector and issuer, we can see whether the portfolio might have higher gains or losses. At the same time, the rationale for the different weights is to simply add a varying factor when each ETF have a common sector and issuer, with the most weight on the ETF with the most total asset value out of the four, and vice versa.
+```{r, echo = FALSE, include=FALSE}
+
+mystocks = c("CORN",'WEAT','SOYB', 'CANE')
+myprices = getSymbols(mystocks, from = '2016-08-06')
+("getSymbols.warning4.0"=FALSE)
+```
+
+
+```{r, echo= FALSE, warning=FALSE}
+for(ticker in mystocks) {
+  expr = paste0(ticker, "a = adjustOHLC(", ticker, ")")
+  eval(parse(text=expr))
+}
+
+
+# Combine all the returns in a matrix
+all_returns = cbind(	ClCl(CORNa),
+                     ClCl(WEATa),
+                     ClCl(SOYBa),
+                     ClCl(CANEa))
+head(all_returns)
+all_returns = as.matrix(na.omit(all_returns))
+
+pairs(all_returns)
+```
+Based on this correlation matrix, we can generally see that the chosen ETFs' adjusted closing prices from the past five years are not as highly correlated as the first portfolio. CANE actually proves to be the least correlated against the other ETFs, since the shapes are fairly more circular. The most correlated agricultural ETFs would be SOYB and CORN.
+
+```{r, echo = FALSE}
+# Now simulate many different possible futures
+# just repeating the above block thousands of times
+set.seed(5)
+initial_wealth = 100000
+sim1 = foreach(i=1:5000, .combine='rbind') %do% {
+  total_wealth = initial_wealth
+  weights = c(0.40, 0.30, 0.20, 0.10)
+  holdings = weights * total_wealth
+  n_days = 20
+  wealthtracker = rep(0, n_days)
+  for(today in 1:n_days) {
+    return.today = resample(all_returns, 1, orig.ids=FALSE) #taking random sample with replacement
+    holdings = holdings + holdings*return.today
+    total_wealth = sum(holdings)
+    wealthtracker[today] = total_wealth
+  }
+  wealthtracker
+}
+
+```
+
+```{r, echo = FALSE}
+trans_sim1 = rbind(rep(100000, 5000),t(sim1))
+matplot(trans_sim1, type='l', col='grey', lty= 1, main= ' Portfolio 2 Simulation Graph', xlab= 'Days', ylab= 'Wealth')
+```
+When bootstrapping, we get 5000 different ways of our wealth trajectory that suggests that there are no outliers that increases or decreases or wealth drastically as opposed to the first portfolio. Now let's plot this on a histogram to gauge a better understanding of the wealth distribution of the simulation.
+
+```{r, echo = FALSE}
+hist(sim1[,n_days]- initial_wealth, breaks=30, xlab = 'Gains/Losses in $', main = paste('Distribution of Wealth Gains/Losses'))
+```
+```{r, echo= FALSE, include = FALSE}
+#Compute the mean wealth at the end of the 4 weeks as well as
+#the average gains over the 4 weeks 
+mean(sim1[,n_days])
+mean(sim1[,n_days] - initial_wealth)
+range(sim1 - initial_wealth)
+quantile(sim1[,n_days]- initial_wealth, prob=0.05)
+
+```
+
+Judging by the histogram alone, we can see that the distribution for gains/losses in portfolio 2 is more evenly distributed than that of portfolio 1. The average gain over the next 4-week period is 163.59 USD, which makes sense as the line trajectories are more centered, especially when there are not a lot of these paths that would greatly skew the average. The average range of gains is between -16,902.01 USD and 21,153.26 USD, with a 5% chance of losing $6,969.44 USD.
+
+
+### Portfolio 3
+The last portfolio we will look at are all-cap ETFs with the highest Top 10 values in assets, with the exception of TILT (who is Top 11). The portfolio includes Ark Innovation ETF (ARKK), SPDR S&P Dividend ETF (SDY), iShares Select Dividend ETF (DVY), Vanguard Extended Market ETF (VXF), iShares Russell Mid-Cap Growth ETF (IWP), VanEck Vectors Morningstar Wide Moat ETF (MOAT), SPDR Portfolio S&P 1500 Composite Stock Market ETF (SPTM), ARK Autonomous Technology & Robotics ETF (ARKQ), Invesco S&P 500® Pure Value ETF (RPV), and FlexShares Morningstar US Market Factor Tilt Index Fund (TILT). The reasoning for this selection is to determine how the flexible of all-cap ETFs to potential investors. In the following below, each ETF will be weighed equally.
+```{r, echo = FALSE, include=FALSE, warning = FALSE}
+
+mystocks = c('ARKK', 'SDY', 'DVY', 'VXF', 'IWP', 'MOAT', 'SPTM', 'ARKQ', 'RPV', 'TILT')
+myprices = getSymbols(mystocks, from = '2016-08-06')
+("getSymbols.warning4.0"=FALSE)
+```
+
+
+```{r, echo= FALSE, warning=FALSE}
+for(ticker in mystocks) {
+  expr = paste0(ticker, "a = adjustOHLC(", ticker, ")")
+  eval(parse(text=expr))
+}
+
+
+# Combine all the returns in a matrix
+all_returns = cbind(	ClCl(ARKKa),
+                     ClCl(SDYa),
+                     ClCl(DVYa),
+                     ClCl(VXFa),
+                     ClCl(IWPa),
+                     ClCl(MOATa),
+                     ClCl(SPTMa),
+                     ClCl(ARKQa),
+                     ClCl(RPVa),
+                     ClCl(TILTa))
+head(all_returns)
+all_returns = as.matrix(na.omit(all_returns))
+
+pairs(all_returns)
+```
+Most, if not all, of these ETFs are highly correlated with each other. This could possibly mean this portfolio poses higher risks. We can examine the wealth path trajectories to inquire further.
+
+```{r, echo = FALSE}
+# Now simulate many different possible futures
+# just repeating the above block thousands of times
+set.seed(5)
+initial_wealth = 100000
+sim1 = foreach(i=1:5000, .combine='rbind') %do% {
+  total_wealth = initial_wealth
+  weights = c(0.10, 0.10, 0.10, 0.10, 0.10, 0.10, 0.10, 0.10, 0.10, 0.10 )
+  holdings = weights * total_wealth
+  n_days = 20
+  wealthtracker = rep(0, n_days)
+  for(today in 1:n_days) {
+    return.today = resample(all_returns, 1, orig.ids=FALSE) #taking random sample with replacement
+    holdings = holdings + holdings*return.today
+    total_wealth = sum(holdings)
+    wealthtracker[today] = total_wealth
+  }
+  wealthtracker
+}
+
+```
+
+```{r, echo = FALSE}
+trans_sim1 = rbind(rep(100000, 5000),t(sim1))
+matplot(trans_sim1, type='l', col='grey', lty= 1, main= ' Portfolio 3 Simulation Graph', xlab= 'Days', ylab= 'Wealth')
+```
+When simulating 5,000 different wealth paths, we can see that there are a lot of wealth paths that diverge from the main set of paths centered around 0. These paths could be skewing the average of our returns.
+
+```{r, echo = FALSE}
+hist(sim1[,n_days]- initial_wealth, breaks=30, xlab = 'Gains/Losses in $', main = paste('Distribution of Wealth Gains/Losses'))
+```
+```{r, echo= FALSE, include = FALSE}
+#Compute the mean wealth at the end of the 4 weeks as well as
+#the average gains over the 4 weeks 
+mean(sim1[,n_days])
+mean(sim1[,n_days] - initial_wealth)
+range(sim1 - initial_wealth)
+quantile(sim1[,n_days]- initial_wealth, prob=0.05)
+
+```
+Based on the distribution graph, there are potential paths that can earn the portfolio around 50,000 USD. The range of these returns is -22,421.70 USD and 71,765.54 USD, with an average return of 2,724.21 USD. The VaR at 5% of this portfolio for the 4-week trading period is 7,846.08 USD, meaning you could lose that much by chance of 5%
+
+Comparing the three portfolios together, the least riskiest appears to be portfolio 2, with the lowest VaR, and the most subtle average. Portfolio 3 has the highest VaR, out of the three. However, portfolio 1 has the biggest range, with the best possible return at 180K USD. If the goal of the investor is to invest in one of these portfolios with having the least risk, then portfolio wins as it has the most normal distribution. With that being said, the investor can also choose to invest in portfolio 3 as it does hafve the highest average return based on the simulations.
+
+## Market Segmentation
+```{r echo = FALSE}
+tweets= read.csv("social_marketing.csv",header=TRUE, row.names=1)
+attach(tweets)
+```
+
+```{r, echo = FALSE}
+library(tidyverse)
+library(ggplot2)
+library(factoextra)
+
+#scale data
+Z = tweets/rowSums(tweets)
+
+#correlation heat map visulaization
+ggcorrplot::ggcorrplot(cor(Z), hc.order = TRUE)
+```
+
+To start off, we created a correlation plot to see how each of the interests were correlated with one another. We also did this to see if a PCA analysis would be appropriate for the data set. Upon inspection, we found that fashion, cooking and beauty are highly correlated with each other; outdoors, personal fitness, health and nutrition are highly correlated with each other; parenting, religion, sports fandom, food, school and family are highly correlated with each other; college uni, online gaming and sports playing are highly correlated with each other, politics, travel and computers are highly correlated with each other; art and film are highly correlated with each other; and shopping, chatter and photo-sharing are also highly correlated with each other. 
+
+By looking at the correlation plot alone, NutrientH20 could take each of the correlated groups and create profiles (market segments) for each one on the premise that because they are correlated, they would be interested in the similar things and therefore campaigns can be made to target each. However, we decided to implement PCA analysis to be able to make more sense of the data set.
+
+
+
+```{r, echo = FALSE}
+# PCA
+PCA = prcomp(Z, scale=TRUE)
+
+plot(PCA)
+summary(PCA)
+```
+We plotted the PCA results to see how much of the variances are explained by each PC analysis. We find that most of it explained by PC1, but it is not significantly more than PC2, PC3, PC4 and P5. Hence, we decided to look at the first 5 PC analysis more closely to see the variations in the data set before applying k-means.
+
+```{r, echo = FALSE}
+# create a tidy summary of the loadings
+loadings_summary = PCA$rotation %>%
+  as.data.frame() %>%
+  rownames_to_column('Interest')
+```
+
+
+```{r, echo = FALSE}
+# This seems to pick out characteristics of
+# more conservative users who are mostly family oriented 
+#people with positive loadings?
+loadings_summary %>%
+  select(Interest, PC1) %>%
+  arrange(desc(PC1))
+```
+
+PC1 seems to pick out characteristics of more conservative users who are mostly family oriented people with positive loadings.
+
+```{r, echo = FALSE}
+#This seems to pick out educated adults, in their late 20's early 30's perhaps, like
+# to stay up to date with current events positive loadings.
+loadings_summary %>%
+  select(Interest, PC2) %>%
+  arrange(desc(PC2))
+```
+
+PC2 seems to pick out educated adults, in their late 20's early 30's perhaps that like to stay up to date with current events, with positive loadings.
+
+```{r, echo = FALSE}
+#This seems to pick out user who are more active and into the outdoors,
+#health and nutrition and personal fitness into positive loadings. 
+#This would be a potential target group for the company.
+loadings_summary %>%
+  select(Interest, PC3) %>%
+  arrange(desc(PC3))
+```
+
+PC3 seems to pick out user who are more active and into the outdoors, health and nutrition and personal fitness into positive loadings.
+
+```{r, echo = FALSE}
+#This seems to pick out social media enthusiast interested in photo sharing 
+#shopping, beauty and fashion with positive loadings. This would be good for the
+#company as these people could serve as social media influences for their campaigns 
+#if they have a large following.
+loadings_summary %>%
+  select(Interest, PC4) %>%
+  arrange(desc(PC4))
+```
+
+PC4 seems to pick out social media enthusiast interested in photo sharing, shopping, beauty and fashion with positive loadings. 
+
+```{r, echo = FALSE}
+#This seems to describe those in a transitionary phase in life, perhaps 
+#just leaving college and looking to explore the world. They are interested 
+#fashion, beauty and cooking. This is a more feminine category, however, that may
+#be a bit too restrictive. 
+loadings_summary %>%
+  select(Interest, PC5) %>%
+  arrange(desc(PC5))
+
+```
+
+PC5 describes a more feminine category with positive loadings.
+
+After doing the PC analysis, we decided to also do a k-means clustering to define each of the clusters. We first used the elbow method to decide the optimal number of clusters. According to the graph below, 10 clusters would be optimal, however we know that choosing this could cause over fitting, so have chosen to make 6 clusters instead. 
+
+```{r}
+set.seed(2)
+scaled_tweets = tweets[,-c(1)]
+scaled_tweets = scale(scaled_tweets)
+
+#elbow method to find ideal number of clusters
+set.seed(1)
+fviz_nbclust(scaled_tweets, kmeans, method = "wss")
+
+#run k-means with 6 clusters 
+clust1 = kmeans(scaled_tweets, 6, nstart=25)
+```
+
+Our 6 clusters from the k-means analysis can be defined as:
+
+* Cluster 1: Conservative Family Orientated Users. These people had high scores in parent, religion, family and food.
+
+* Cluster 2: Educated Adults & Young Professionals. These people had high scores in politics, news, travel and computers.
+
+* Cluster 3: Social Media Enthusiasts/Influences. These people had high scores in cooking, beauty, fashion and photo sharing. This is a more feminine category, however, that may
+be a bit too restrictive tp stricltly categorize it this way.
+
+* Cluster 4: Un-categorized. All the values for this cluster are negative therefore it is not easily interpretable. It would be safe to assume that this cluster represents those who have a high number of the un-categorized tweets.
+
+Cluster 5: College Students. These people had high scores in online gaming, college uni and sports playing.
+
+Cluster 6: Active and Health Conscious. These people had high scores in health & nutrition, outdoors and personal fitness.
+
+```{r, echo=FALSE}
+clust1$center
+```
+
+For the most part, we can see that our K-means cluster are in tandem with the PCA results. Below is a visualization of the clusters from the K-means analysis. 
+
+
+
+
+```{r, echo=FALSE}
+fviz_cluster(clust1, data = tweets,
+             geom = "point",
+             ellipse.type = "convex", 
+             ggtheme = theme_bw()
+             )
+```
+
+
+## Author Attribution
+
+```{r}
+# Load in packages
+library(tm)
+library(tidyverse)
+library(slam)
+library(proxy)
+library(rpart)
+library(class)
+library(randomForest)
+```
+
+
+```{r, echo=F,message=FALSE, warning=FALSE}
+
+# Reader plain text
+readerPlain = function(fname){
+				readPlain(elem=list(content=readLines(fname)), 
+							id=fname, language='en') }
+# Load data
+dirstrain <- list.dirs("C50train", full.names = T)
+dirstest <- list.dirs("C50test", full.names = T)
+# remove the first element in the list, making it to be 50 elements
+dirstrain <- dirstrain[-1]
+dirstest <- dirstest[-1]
+```
+
+#### TRAINING SET 
+
+Let's deal with training set first. We rolled all 2500 directories from 50 authors in 'C50train'  together into a single corpus. Then we cleaned of punctuation, excessive white-space and common English language words. This pre-processing process facilitates the relevant terms to surface for text mining that would help build classification model.
+```{r, echo=F,message=FALSE, warning=FALSE}
+# Rolling directories together into a single corpus
+file_list = Sys.glob(paste0(dirstrain,'/*.txt'))
+# a more clever regex to get better file names
+data = lapply(file_list, readerPlain) 
+mynames = file_list %>%
+	{ strsplit(., '/', fixed=TRUE) } %>%
+	{ lapply(., tail, n=2) } %>%
+	{ lapply(., paste0, collapse = '') } %>%
+	unlist
+names(data) = mynames
+# Labeling with only names of authors
+labelstrain <- gsub("C50train/(.*)/.*","\\1", file_list)
+
+# Create the corpus
+documents_raw = Corpus(VectorSource(data))
+
+# Pre-processing
+my_documents = documents_raw %>%
+  tm_map(content_transformer(tolower))  %>%             # make everything lowercase
+  tm_map(content_transformer(removeNumbers)) %>%        # remove numbers
+  tm_map(content_transformer(removePunctuation)) %>%    # remove punctuation 
+  tm_map(content_transformer(stripWhitespace)) %>%      # remove excess white-space
+  tm_map(content_transformer(removeWords), stopwords("en")) # remove stopwords. 
+```
+
+We then created a document term matrix of the corpus. The raw results indicated that our training corpus had 2500 documents an 32570 terms. In our case, the sparsity index of 99% indicated that 99% of our DTM entries are zeros.
+```{r, echo=F,message=FALSE, warning=FALSE}
+# Create a doc-term-matrix from the corpus
+DTMtrain = DocumentTermMatrix(my_documents)
+# DTM's summary statistics
+DTMtrain  # XX% sparsity means XX% of the entries are zero
+```
+
+We could see that the noise of the "long tail"(rare terms) was actually huge. We could not learn much on those terms occurred once. As a result, we removed those terms that have count 0 in 95% of documents. The new results showed that now we only had 801 terms in the corpus and the sparsity is 86%.
+```{r, echo=F,message=FALSE, warning=FALSE}
+# Removes those terms that have count 0 in >95% of docs.  
+DTMtrain = removeSparseTerms(DTMtrain, 0.95)
+DTMtrain
+```
+Let's try to inspect the terms that appear in at least 250 documents:
+```{r, echo=F,message=FALSE, warning=FALSE}
+findFreqTerms(DTMtrain, 250)
+```
+
+#### TEST SET
+
+We did the same pre-processing process and create a document term matrix for our test corpus.
+```{r, echo=F,message=FALSE, warning=FALSE}
+file_list_test = Sys.glob(paste0(dirstest,'/*.txt'))
+data_test = lapply(file_list_test, readerPlain) 
+mynames_test = file_list_test %>%
+	{ strsplit(., '/', fixed=TRUE) } %>%
+	{ lapply(., tail, n=2) } %>%
+	{ lapply(., paste0, collapse = '') } %>%
+	unlist
+names(data_test) = mynames_test
+
+labelstest <- gsub("C50test/(.*)/.*","\\1", file_list_test)
+
+# Create the corpus
+documents_test = Corpus(VectorSource(data_test))
+
+# Pre-processing
+my_documents_test = documents_test %>%
+  tm_map(content_transformer(tolower))  %>%             # make everything lowercase
+  tm_map(content_transformer(removeNumbers)) %>%        # remove numbers
+  tm_map(content_transformer(removePunctuation)) %>%    # remove punctuation 
+  tm_map(content_transformer(stripWhitespace)) %>%      # remove excess white-space
+  tm_map(content_transformer(removeWords), stopwords("en")) # remove stopwords.
+```
+
+We could find out that our test corpus had 2500 documents an 33373 terms. The sparsity is 99%.
+```{r, echo=F,message=FALSE, warning=FALSE}
+## create a doc-term-matrix from the corpus
+DTMtest = DocumentTermMatrix(my_documents_test)
+DTMtest
+```
+After removing those therms that have count 0 in 95% of the documents, we got 816 terms and sparsity at 86% for our test corpus.
+```{r, echo=F,message=FALSE, warning=FALSE}
+DTMtest = removeSparseTerms(DTMtest, 0.95)
+DTMtest
+```
+
+There was new words in the test data that we never saw in the training set. We decided to ignore these new terms in the test data and aligned the terms in the training data with those in the test data. Now we could see that we had 743 common words in training and test.
+```{r, echo=F,message=FALSE, warning=FALSE}
+# Covert from matrix to DataFrame
+traindata <- data.frame( as.matrix( DTMtrain ), label = labelstrain)
+traindata$label <- factor(traindata$label)
+testdata <- data.frame( as.matrix( DTMtest ), label = labelstest)
+testdata $label <- factor(testdata $label)
+
+# Aligning Training data terms with Test data terms
+traindata2 <- traindata[, names(traindata) %in% names(testdata) ]
+testdata2 <- testdata[, names(traindata2) ]
+```
+
+
+### MODEL: KNN
+```{r knn, echo = FALSE}
+set.seed(2021)
+accuracy_knn <- c()
+
+# Make predictions with different k values
+for(k in c(1, 3, 5, 7)) {
+preds <- knn(traindata2[,-ncol(traindata2)], 
+             testdata2[,-ncol(testdata2)],
+             traindata2$label,
+             k = k)
+accuracy_knn <- c(accuracy_knn,  mean(testdata2$label == preds))
+}
+  
+cat("accuracy for different k values:", accuracy_knn)
+cat("\nThe best accuracy = ", max(accuracy_knn))
+bestk <- c(1, 3, 5, 7)[which.max(accuracy_knn)]
+cat("\nThe k value with best accuracy:", bestk)
+```
+From our knn analysis, we achieved best accuracy at 35.48% when k=1.
+
+### MODEL: Random Forest
+```{r, echo = FALSE}
+#build a random forest model
+set.seed(2021)
+model_rf <- randomForest(label ~ .,data = traindata2)
+
+#make predictions on testing data
+preds <- predict(model_rf,  testdata2, type = "class")
+
+accuracy_rf <- mean(testdata2$label == preds)
+accuracy_rf
+```
+Our random forest model helped us achieve 60.68% accuracy. As a result, we can conclude that the random forest model is best at predicting the author of an article on the basis of that article's textual content.
+
+
+## Association Rule Mining
+```{r, echo = FALSE, include = FALSE}
+library(arules)
+library(arulesViz)
+```
+
+```{r, echo = FALSE}
+groceries = read.transactions("groceries.txt", sep = ",")
+
+arules::inspect(groceries[1:5])
+
+itemFrequencyPlot(groceries, topN = 20)
+
+baskets = apriori(groceries, parameter = list(support = 0.01, confidence = .25))
+
+```
+The top 5 items are whole milk, other vegetables, rolls/buns, soda, and yogurt.
+
+The frequency will also be the support for each individual item.
+
+Thresholds are initialized based on trials and errors.
+Support means that the basket of items' frequency out of the  is not lower than 1% of transactions.
+Confidence means that we are 25% confident that the consequent follows the antecedent.
+Any higher support and confidence thresholds would not allow much interpretability of our data especially when creating subsets of baskets (based on most frequent items) for further exploration.
+
+
+Now we graph top 10 strongest association rules from the thresholds above.
+
+We will do it for the Top 3 most frequent items to occur in the transactions. 
+
+The first item of interest will be whole milk.
+
+
+
+```{r, echo=FALSE}
+milk_baskets = subset(baskets, items %in% 'whole milk')
+
+top10_mb = head(milk_baskets, n = 10, by = 'lift')
+plot(top10_mb, method = 'grouped')
+
+arules::inspect(top10_mb)
+```
+The basket is at least 2x more likely to have root vegetables, tropical fruit, yogurt, or other vegetables given that whole milk is already in the basket than not having whole milk in the basket.
+
+Now for baskets with other vegetables.
+
+
+
+
+```{r, echo = FALSE}
+veg_baskets = subset(baskets, items %in% 'other vegetables')
+
+top10_vb = head(veg_baskets, n = 10, by = 'lift')
+plot(top10_vb, method = 'grouped')
+
+arules::inspect(top10_vb)
+```
+Top items appear together with other vegetables when it is already in the basket are root vegetables or tropical fruit.
+Item baskets like citrus fruit and root vegetables, or tropical fruit and root vegetables are at least 3x higher to have also bought other vegetables than without the aforementioned combination basket of items.
+
+Now for baskets with rolls/buns.
+
+```{r, echo = FALSE}
+buns_baskets = subset(baskets, items %in% 'rolls/buns')
+
+top10_bb = head(buns_baskets, n = 10, by = 'lift')
+plot(top10_bb, method = 'grouped')
+
+arules::inspect(top10_bb)
+```
+When the basket already has rolls/buns in it, then it is at least 2x higher to have root vegetables, other vegetables, or whole milk in it than without the combination basket of items that include rolls/buns.
+
+Now to compare the top 20 association rules based on the conditional probability that an item will appear given an item or set of items (confidence) and based on the strength of this probability (lift = confidence/expected confidence)
+
+```{r, echo = FALSE}
+top20_conf = head(baskets, n = 20, by = 'confidence')
+plot(top20_conf, method = 'graph')
+arules::inspect(top20_conf)
+
+top20_lift = head(baskets, n = 20, by = "lift")
+plot(top20_lift, method = 'graph')
+arules::inspect(top20_lift)
+
+```
+When sorting by the top confidence from baskets object (support > 0.01 and confidence > 0.25), the most common item to appear in this top 20 is whole milk as a consequent item, with the first network figure easily showing the relationships. This means that given other combination of baskets, that basket will also contain milk. However, the lift from this list is not as high as our Top 20 association rules based on lift. This begs us the question: Can we really trust this association? Having a high confidence, but not as high of a lift could just mean that whole milk appearing in the same basket as other items could just be a coincidence.
+
+Looking at the other Top 20 list based on lift, we can gather that root vegetables and other vegetables as consequent items are high in lift. This means that we can trust this association. The basket will contain root vegetables or root vegetables given other basket combination of items (eg. citrus fruit and other vegetables, OR beef alone) than not having these other combination of items by more than three times.
+
+
+
+
+
+
+
